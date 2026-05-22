@@ -1,3 +1,5 @@
+package utilities;
+
 public class LittleEndianParser {
     public static int readUInt16LE(byte[] data, int offset) {
         return ((data[offset + 1] & 0xFF) << 8) | (data[offset] & 0xFF);

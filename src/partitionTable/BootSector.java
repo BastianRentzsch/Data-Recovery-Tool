@@ -1,3 +1,5 @@
+package partitionTable;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -7,7 +9,11 @@ public class BootSector {
     public int reservedSectorsCount;
     public int fatsCount;
     public long fatSize;
+    public long totalSectors;
     public long rootCluster;
+
+    public long dataSector;
+    public long clusterCount;
     public int clusterSize;
 
     public BootSector(byte[] bootSector) {
@@ -22,10 +28,17 @@ public class BootSector {
         this.reservedSectorsCount = byteBuffer.getShort(14) & 0xFFFF;
         // Offset 16 byte | Size 1 byte
         this.fatsCount = byteBuffer.get(16) & 0xFF;
+        // Offset 32 byte | Size 4 byte
+        this.totalSectors = byteBuffer.get(32) & 0xFFFFFFFFL;
         // Offset 36 byte | Size 4 bytes
         this.fatSize = byteBuffer.getInt(36) & 0xFFFFFFFFL;
         // Root directory | Offset 44 byte | Size 4 bytes
         this.rootCluster = byteBuffer.getInt(44) & 0xFFFFFFFFL;
+
+        // The count of sectors in the data region of the partition
+        this.dataSector = this.totalSectors - (this.reservedSectorsCount + (this.fatsCount * this.fatSize));
+        // the count of clusters in the data region of the partition
+        this.clusterCount = dataSector / this.sectorsPerCluster;
         // Size of a single cluster
         this.clusterSize = this.bytesPerSector * this.sectorsPerCluster;
     }

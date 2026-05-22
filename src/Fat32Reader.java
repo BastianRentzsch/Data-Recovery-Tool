@@ -1,6 +1,7 @@
-import directory.DirectoryEntry;
+import filesystem.DirectoryEntry;
 import masterBootRecord.MasterBootRecord;
 import masterBootRecord.PartitionEntry;
+import partitionTable.Partition;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -8,8 +9,7 @@ import java.util.*;
 
 public class Fat32Reader {
     public RandomAccessFile disk;
-    public List<BootSector> bootSectors;
-    public List<DirectoryEntry> directoryEntries;
+    public List<Partition> partitions;
 
 //    public static class LfnEntry {
 //        final int ordinal;
@@ -39,26 +39,17 @@ public class Fat32Reader {
         disk.readFully(mbrBytes);
         MasterBootRecord masterBootRecord = new MasterBootRecord(disk);
 
-        // Create a new ArrayList for the bootSectors
-        this.bootSectors = new ArrayList<>();
+        // Create a new ArrayList for the partitions
+        this.partitions = new ArrayList<>();
 
         // MBR has only 4 partitions
         for (PartitionEntry partitionEntry : masterBootRecord.partitionEntries) {
             // Is the partition bootable, if not than ignore that entry
-            if (partitionEntry.flag == 0) continue;
+            if (partitionEntry.size == 0) continue;
 
-            // Jump to the start of the partition
-            long pos = 512 * partitionEntry.startLBA;
-            disk.seek(pos);
-
-            // Read the boot sector of this partition
-            byte[] bootSectorBytes = new byte[512];
-            this.disk.readFully(bootSectorBytes);
-            this.bootSectors.add(new BootSector(bootSectorBytes));
+            this.partitions.add(new Partition(disk, partitionEntry.startLBA));
         }
     }
-    
-
 
 //    public int lfnChecksum(byte[] shortName11) {
 //        int sum = 0;
@@ -114,13 +105,13 @@ public class Fat32Reader {
 //                    StringBuilder part = new StringBuilder();
 //
 //                    // Chars 1-5
-//                    LittleEndianParser.readUTF16LEChars(fileData, i + 1, 10, part);
+//                    utilities.LittleEndianParser.readUTF16LEChars(fileData, i + 1, 10, part);
 //
 //                    // Chars 6-11
-//                    LittleEndianParser.readUTF16LEChars(fileData, i + 14, 12, part);
+//                    utilities.LittleEndianParser.readUTF16LEChars(fileData, i + 14, 12, part);
 //
 //                    // Chars 12-13
-//                    LittleEndianParser.readUTF16LEChars(fileData, i + 28, 4, part);
+//                    utilities.LittleEndianParser.readUTF16LEChars(fileData, i + 28, 4, part);
 //
 //                    longFileNameParts.add(0, part.toString());
 //                    continue;
@@ -175,8 +166,8 @@ public class Fat32Reader {
 ////                        (fileData[i + 26] & 0xFFL);
 ////                long startCluster = (high << 16) | low;
 //
-//                long high = LittleEndianParser.readUInt16LE(fileData, i + 20) & 0xFFFFL;
-//                long low = LittleEndianParser.readUInt16LE(fileData, i + 26) & 0xFFFFL;
+//                long high = utilities.LittleEndianParser.readUInt16LE(fileData, i + 20) & 0xFFFFL;
+//                long low = utilities.LittleEndianParser.readUInt16LE(fileData, i + 26) & 0xFFFFL;
 //                long startCluster = (high << 16) | low;
 //
 //                // Calculate size of File
@@ -184,7 +175,7 @@ public class Fat32Reader {
 ////                        ((fileData[i + 30] & 0xFFL) << 16) |
 ////                        ((fileData[i + 29] & 0xFFL) << 8) |
 ////                        (fileData[i + 28] & 0xFFL);
-//                long fileSize = LittleEndianParser.readUInt32LE(fileData, i + 28);
+//                long fileSize = utilities.LittleEndianParser.readUInt32LE(fileData, i + 28);
 //
 //                // Add directory entry to list of all entries
 //                entries.add(new directory.DirectoryEntry(
@@ -291,9 +282,11 @@ public class Fat32Reader {
 
     public List<DirectoryEntry> getAllDeletedFilesAndDirectories() {
         List<DirectoryEntry> deleted = new ArrayList<>();
-        for (DirectoryEntry directoryEntry : this.directoryEntries) {
-            // When directory entry is deleted add to list of deleted
-            if (directoryEntry.isDeleted) deleted.add(directoryEntry);
+        for (Partition partition : partitions) {
+            for (DirectoryEntry directoryEntry : partition.directoryEntries) {
+                // When directory entry is deleted add to list of deleted
+                if (directoryEntry.isDeleted) deleted.add(directoryEntry);
+            }
         }
         return deleted;
     }
@@ -302,9 +295,12 @@ public class Fat32Reader {
         // List of clusters for if the name of the directory exists multiple time
         List<Long> clusters = new ArrayList<>();
 
-        for (DirectoryEntry directoryEntry : this.directoryEntries) {
-            // Add cluster to list if the directory has the same name as is searched for
-            if (directoryEntry.isDirectory && directoryEntry.fileName.equals(name)) clusters.add(directoryEntry.startCluster);
+        for (Partition partition : partitions) {
+            for (DirectoryEntry directoryEntry : partition.directoryEntries) {
+                // Add cluster to list if the directory has the same name as is searched for
+                if (directoryEntry.isDirectory && directoryEntry.fileName.equals(name))
+                    clusters.add(directoryEntry.startCluster);
+            }
         }
 
         // Map for if the name of the directory exists multiple time

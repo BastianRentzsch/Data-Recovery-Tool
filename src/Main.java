@@ -1,4 +1,5 @@
-import directory.DirectoryEntry;
+import filesystem.DirectoryEntry;
+import partitionTable.Partition;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -74,18 +75,10 @@ public class Main {
     private static boolean openDriveOrImage(Scanner scanner, Fat32Reader fat32Reader) throws IOException {
         String drivePath;
         do {
-//            // Unter Windows z.B.: "\\\\.\\D:"(als Admin ausführen!).
-//            // Unter Linux z.B.: "/dev/sdb1".
-//              String drivePath = "\\\\\\\\.\\\\"+ args[0] +":";
-            System.out.print("Please enter the Path to the Drive or Image you want to open or 'quit' to exit: ");
+            System.out.print("Please enter the Path to the Image you want to open or 'quit' to exit: ");
             drivePath = scanner.nextLine().trim();
 
             if (!drivePath.isEmpty()) {
-//                // Opening Drive
-//                if (drivePath.endsWith(":")) {
-//                    drivePath = "\\\\\\\\.\\\\" + drivePath;
-//                    break;
-//                }
                 // Opening Image file
                 if (drivePath.endsWith(".img")) {
                     break;
@@ -95,14 +88,12 @@ public class Main {
                     return true;
                 }
                 System.out.println("Please enter a path to an image file that ends with '.img' or 'quit'.");
-//                System.out.println("Please enter either an Drive name with ':' at the end or a Path to an Image file that ends with '.img'");
             }
         } while (true);
 
-        System.out.println("Pfad: [" + drivePath + "]");
-        System.out.println("Existiert: " + new java.io.File(drivePath).exists());
-        System.out.println("Ist Datei: " + new java.io.File(drivePath).isFile());
-
+//        System.out.println("Pfad: [" + drivePath + "]");
+//        System.out.println("Existiert: " + new java.io.File(drivePath).exists());
+//        System.out.println("Ist Datei: " + new java.io.File(drivePath).isFile());
 
         fat32Reader.open(drivePath);
         return false;
@@ -111,32 +102,34 @@ public class Main {
     private static void showBootSectorInfos(Fat32Reader fat32Reader) throws IOException {
         System.out.println("\u001b[34m=== Show Boot Sektor Infos ===\u001b[0m");
 
-        // Show for each Partition their boot sector, 1 - 4 times
-        for (BootSector bootSector : fat32Reader.bootSectors) {
-            bootSector.printInfo();
+        // Show for each partitionTable.Partition their boot sector, 1 - 4 times
+        for (Partition partition : fat32Reader.partitions) {
+            partition.bootSector.printInfo();
         }
     }
 
     private static void showAllFilesAndDirectories(Fat32Reader fat32Reader, Scanner scanner) throws IOException {
         System.out.println("\u001b[34m=== all Files and Directories ===\u001b[0m");
 
-        if (fat32Reader.directoryEntries.isEmpty()) {
-            System.out.println("No Files and Directories could be found.");
-            return;
-        }
-
-        // Output of directories entries in increments of 25
-        for (int i = 0; i < fat32Reader.directoryEntries.size(); i+= 25) {
-            for (int j = i; j < i + 25 && j < fat32Reader.directoryEntries.size(); j++) {
-                // Output of directories entry's information
-                System.out.println(fat32Reader.directoryEntries.get(j));
+        for (Partition partition : fat32Reader.partitions) {
+            if (partition.directoryEntries.isEmpty()) {
+                System.out.println("No Files and Directories could be found.");
+                continue;
             }
 
-            // Question if user wants to stop, only the input "Y" or "y" matter, else it continues
-            if (i + 25 < fat32Reader.directoryEntries.size()) {
-                System.out.print("Do you want to stop [ Y ]: ");
-                String choice = scanner.nextLine().trim();
-                if (choice.equalsIgnoreCase("y")) return;
+            // Output of directories entries in increments of 25
+            for (int i = 0; i < partition.directoryEntries.size(); i += 25) {
+                for (int j = i; j < i + 25 && j < partition.directoryEntries.size(); j++) {
+                    // Output of directories entry's information
+                    System.out.println(partition.directoryEntries.get(j));
+                }
+
+                // Question if user wants to stop, only the input "Y" or "y" matter, else it continues
+                if (i + 25 < partition.directoryEntries.size()) {
+                    System.out.print("Do you want to stop [ Y ]: ");
+                    String choice = scanner.nextLine().trim();
+                    if (choice.equalsIgnoreCase("y")) return;
+                }
             }
         }
     }

@@ -1,4 +1,4 @@
-package directory;
+package filesystem;
 
 public class DirectoryEntry {
     public String fileName;
