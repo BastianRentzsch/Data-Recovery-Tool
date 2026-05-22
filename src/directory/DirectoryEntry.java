@@ -1,3 +1,5 @@
+package directory;
+
 public class DirectoryEntry {
     public String fileName;
     public long startCluster;
@@ -21,9 +23,7 @@ public class DirectoryEntry {
         StringBuilder result = new StringBuilder();
 
         // Indentations for the different levels of the directories
-        for (int i = 0; i < this.level; i++) {
-            result.append("  ");
-        }
+        result.repeat("  ", Math.max(0, this.level));
 
         result.append(isDeleted ? "\u001b[31;43m[DELETED]\u001b[0m " : "")
                 .append(this.fileName)

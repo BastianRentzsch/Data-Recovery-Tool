@@ -12,13 +12,21 @@ public class BootSector {
 
     public BootSector(byte[] bootSector) {
         ByteBuffer byteBuffer = ByteBuffer.wrap(bootSector).order(ByteOrder.LITTLE_ENDIAN);
+        // Offset starts with 0 byte for BPB (BIOS Parameter Block)
 
+        // Offset 11 byte | Size 2 bytes
         this.bytesPerSector = byteBuffer.getShort(11) & 0xFFFF;
+        // Offset 13 byte | Size 1 byte
         this.sectorsPerCluster = byteBuffer.get(13) & 0xFF;
+        // Offset 14 byte | Size 2 bytes
         this.reservedSectorsCount = byteBuffer.getShort(14) & 0xFFFF;
+        // Offset 16 byte | Size 1 byte
         this.fatsCount = byteBuffer.get(16) & 0xFF;
+        // Offset 36 byte | Size 4 bytes
         this.fatSize = byteBuffer.getInt(36) & 0xFFFFFFFFL;
+        // Root directory | Offset 44 byte | Size 4 bytes
         this.rootCluster = byteBuffer.getInt(44) & 0xFFFFFFFFL;
+        // Size of a single cluster
         this.clusterSize = this.bytesPerSector * this.sectorsPerCluster;
     }
 

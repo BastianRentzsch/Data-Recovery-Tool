@@ -1,239 +1,318 @@
+import directory.DirectoryEntry;
+import masterBootRecord.MasterBootRecord;
+import masterBootRecord.PartitionEntry;
+
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class Fat32Reader {
     public RandomAccessFile disk;
-    public BootSector bootSector;
-    public int offsetToBootSector = 0;
-    public List<DirectoryEntry> directoryEntries = new LinkedList<>();
+    public List<BootSector> bootSectors;
+    public List<DirectoryEntry> directoryEntries;
+
+//    public static class LfnEntry {
+//        final int ordinal;
+//        final boolean last;
+//        final int checksum;
+//        final String namePart;
+//
+//        LfnEntry(int ordinal, boolean last, int checksum, String namePart) {
+//            this.ordinal = ordinal;
+//            this.last = last;
+//            this.checksum = checksum;
+//            this.namePart = namePart;
+//        }
+//    }
 
     public void open(String drivePath) throws IOException {
-        if (drivePath.isEmpty()) throw new IOException();
+        if (drivePath == null || drivePath.isEmpty()) throw new IOException("Invalid Path");
 
-        // if it is an Image the boot sector starts not at Byte 0
-        if (drivePath.endsWith(".img")) {
-            this.offsetToBootSector = 2048 * 8;
-        }
-
-        // only able to read
+        // Able to read
         this.disk = new RandomAccessFile(drivePath, "r");
 
-        // go to the start of the boot sector
-        disk.seek(this.offsetToBootSector);
+        // Start the reading of the image
+        disk.seek(0);
 
-        // read the boot sector and find important information
-        byte[] bootSectorBytes = new byte[(512)];
-        this.disk.readFully(bootSectorBytes);
-        this.bootSector = new BootSector(bootSectorBytes);
+        // Read the Master Boot Record
+        byte[] mbrBytes = new byte[(512)];
+        disk.readFully(mbrBytes);
+        MasterBootRecord masterBootRecord = new MasterBootRecord(disk);
 
-        this.directoryEntries = this.readDirectory(this.bootSector.rootCluster);
-    }
+        // Create a new ArrayList for the bootSectors
+        this.bootSectors = new ArrayList<>();
 
-    private void readUTF16LEChars(byte[] data, int offset, int length, StringBuilder stringBuilder) {
-        // loop advances by 2 bytes each iteration because UTF-16 characters are 2 bytes long
-        for (int i = offset; i < offset + length; i += 2) {
-            int lowByte = data[i] & 0xFF; // first
-            int highByte = data[i + 1] & 0xFF;  // second
+        // MBR has only 4 partitions
+        for (PartitionEntry partitionEntry : masterBootRecord.partitionEntries) {
+            // Is the partition bootable, if not than ignore that entry
+            if (partitionEntry.flag == 0) continue;
 
-            // reconstructs a 16-bit value from two bytes
-            int code = (highByte << 8) | lowByte;
+            // Jump to the start of the partition
+            long pos = 512 * partitionEntry.startLBA;
+            disk.seek(pos);
 
-            // end markers
-            if (code == 0x0000 || code == 0xFFFF)
-                break;
-
-            // converts UTF-16 Code to a Chars
-            stringBuilder.append((char) code);
+            // Read the boot sector of this partition
+            byte[] bootSectorBytes = new byte[512];
+            this.disk.readFully(bootSectorBytes);
+            this.bootSectors.add(new BootSector(bootSectorBytes));
         }
     }
+    
 
-    private List<DirectoryEntry> readDirectory(long cluster) throws IOException {
-        // cluster can not be lower than the root directory cluster
-        if (cluster < this.bootSector.rootCluster) return null;
 
-        List<DirectoryEntry> directoryEntries = new LinkedList<>();
-        directoryEntries.addAll(readDirectory(cluster, 0));
+//    public int lfnChecksum(byte[] shortName11) {
+//        int sum = 0;
+//        for (int i = 0; i < 11; i++) {
+//            sum = ((sum & 1) != 0 ? 0x80 : 0) + (sum >> 1) + (shortName11[i] & 0xFF);
+//            sum &= 0xFF;
+//        }
+//        return sum;
+//    }
+//    public String readLfnPart(byte[] fileData, int i) {
+//        StringBuilder part = new StringBuilder();
+//        readUTF16LEChars(fileData, i + 1, 10, part);
+//        readUTF16LEChars(fileData, i + 14, 12, part);
+//        readUTF16LEChars(fileData, i + 28, 4, part);
+//        return part.toString();
+//    }
 
-        return directoryEntries;
-    }
+//    private List<directory.DirectoryEntry> readDirectory(long cluster) throws IOException {
+//        // Cluster can not be lower than the root directory cluster
+//        if (cluster < this.bootSectors.rootCluster) return new ArrayList<>();
+//
+//        return new ArrayList<>(readDirectory(cluster, 0));
+//    }
 
-    private List<DirectoryEntry> readDirectory(long cluster, int level) throws IOException {
-        List<byte[]> clusters = readClusterChain(cluster);
-        List<DirectoryEntry> directoryEntries = new LinkedList<>();
+//    public List<directory.DirectoryEntry> readDirectory(long cluster, int level) throws IOException {
+//        // Cluster can not be lower than the root directory cluster
+////        if (cluster < 2 ) return new ArrayList<>();
+//
+//        // Get all clusters that belong together with that cluster
+//        List<byte[]> clusters = readClusterChain(cluster);
+//        List<directory.DirectoryEntry> entries = new ArrayList<>();
+////----
+////        List<LfnEntry> pendingLfn = new ArrayList<>();
+////----
+//
+//        for (byte[] fileData : clusters) {
+//            List<String> longFileNameParts = new ArrayList<>();
+//
+//            for (int i = 0; i < fileData.length; i += 32) {
+//                int firstByte = fileData[i] & 0xFF;
+//
+//                // Unused entry
+//                if (firstByte == 0x00) {
+////                    pendingLfn.clear();
+//                    break;
+//                }
+//
+//                // For looking if it is a directory and if it has a long name
+//                int attribute = fileData[i + 11] & 0xFF;
+//
+//                // Has entry a long Filename
+//                if (attribute == 0x0F) {
+//                    StringBuilder part = new StringBuilder();
+//
+//                    // Chars 1-5
+//                    LittleEndianParser.readUTF16LEChars(fileData, i + 1, 10, part);
+//
+//                    // Chars 6-11
+//                    LittleEndianParser.readUTF16LEChars(fileData, i + 14, 12, part);
+//
+//                    // Chars 12-13
+//                    LittleEndianParser.readUTF16LEChars(fileData, i + 28, 4, part);
+//
+//                    longFileNameParts.add(0, part.toString());
+//                    continue;
+////                    int ord = fileData[i] & 0xFF;
+////                    boolean last = (ord & 0x40) != 0;
+////                    int ordinal = ord & 0x1F;
+////                    int checksum = fileData[i + 13] & 0xFF;
+////                    String part = readLfnPart(fileData, i);
+////
+////                    pendingLfn.add(new LfnEntry(ordinal, last, checksum, part));
+////                    continue;
+//                }
+//
+//                // Is entry deleted
+//                boolean isDeleted = firstByte == 0xE5;
+//
+//                // Is entry a Directory
+//                boolean isDirectory = (attribute & 0x10) != 0;
+//
+////                byte[] shortNameBytes = Arrays.copyOfRange(fileData, i, i + 11);
+////                int expectedChecksum = lfnChecksum(shortNameBytes);
+//
+////                String name = buildValidatedLfnName(pendingLfn, expectedChecksum);
+//
+//                String name = String.join("", longFileNameParts);
+////                name == null ||
+//                if (name.isEmpty()) {
+//                    // Fallback to 8.3 short name
+//                    name = new String(fileData, i, 8, StandardCharsets.US_ASCII).trim();
+//                    String ext = new String(fileData, i + 8, 3, StandardCharsets.US_ASCII).trim();
+//
+//                    // Add extensions to file names
+//                    if (!ext.isEmpty()) name += "." + ext;
+//                }
+//
+//                longFileNameParts.clear();
+////                pendingLfn.clear();
+//
+//                // Skip current directory and parent directory
+//                if (name.equals(".") || name.equals("..")) continue;
+//
+//                // Replace first char with _ if the entry has been deleted
+//                if (isDeleted && !name.isEmpty()) name = "_" + name.substring(1);
+//
+//                // Calculate Cluster
+////                long high = ((fileData[i + 21] & 0xFFFF) << 8) | (fileData[i + 20] & 0xFFFF);
+////                long low = ((fileData[i + 27] & 0xFFFF) << 8) | (fileData[i + 26] & 0xFFFF);
+//
+////                long high = ((fileData[i + 21] & 0xFFL) << 8) |
+////                        (fileData[i + 20] & 0xFFL);
+////                long low = ((fileData[i + 27] & 0xFFL) << 8) |
+////                        (fileData[i + 26] & 0xFFL);
+////                long startCluster = (high << 16) | low;
+//
+//                long high = LittleEndianParser.readUInt16LE(fileData, i + 20) & 0xFFFFL;
+//                long low = LittleEndianParser.readUInt16LE(fileData, i + 26) & 0xFFFFL;
+//                long startCluster = (high << 16) | low;
+//
+//                // Calculate size of File
+////                long fileSize = ((fileData[i + 31] & 0xFFL) << 24) |
+////                        ((fileData[i + 30] & 0xFFL) << 16) |
+////                        ((fileData[i + 29] & 0xFFL) << 8) |
+////                        (fileData[i + 28] & 0xFFL);
+//                long fileSize = LittleEndianParser.readUInt32LE(fileData, i + 28);
+//
+//                // Add directory entry to list of all entries
+//                entries.add(new directory.DirectoryEntry(
+//                        name, startCluster, fileSize, isDeleted, isDirectory, level
+//                ));
+//
+//                // Enter subdirectory
+//                if (isDirectory && startCluster >= 2) entries.addAll(
+//                        readDirectory(startCluster, (level + 1))
+//                );
+//            }
+//        }
+//
+//        return entries;
+//    }
+//---
+//public String buildValidatedLfnName(List<LfnEntry> pendingLfn, int expectedChecksum) {
+//    if (pendingLfn.isEmpty()) return null;
+//
+//    int n = pendingLfn.size();
+//    LfnEntry lastEntry = pendingLfn.get(0);
+//    if (!lastEntry.last || lastEntry.ordinal != n) return null;
+//
+//    for (int idx = 0; idx < n; idx++) {
+//        LfnEntry entry = pendingLfn.get(idx);
+//        int expectedOrdinal = n - idx;
+//        if (entry.ordinal != expectedOrdinal) return null;
+//        if (entry.checksum != expectedChecksum) return null;
+//    }
+//
+//    StringBuilder name = new StringBuilder();
+//    for (int idx = 0; idx < n; idx++) {
+//        name.append(pendingLfn.get(idx).namePart);
+//    }
+//    return name.toString();
+//}
+//---
 
-        for (byte[] fileData : clusters) {
-            List<String> longFileNameParts = new LinkedList<>();
+//    public long getNextCluster(long cluster) throws IOException {
+//        long fatOffset = offsetToBootSector + ((long) this.bootSectors.reservedSectorsCount * this.bootSectors.bytesPerSector);
+//
+//        long fatEntryOffset = fatOffset + (cluster * 4L);
+//
+//        disk.seek(fatEntryOffset);
+//        System.out.println("fatOffset = " + fatOffset);
+//        System.out.println("fatEntryOffset = " + fatEntryOffset);
+//        byte[] bytes = new byte[4];
+//        disk.readFully(bytes);
+//
+//        long value = ((bytes[3] & 0xFFL) << 24) |
+//                ((bytes[2] & 0xFFL) << 16) |
+//                ((bytes[1] & 0xFFL) << 8)  |
+//                (bytes[0] & 0xFFL);
+//
+//        // FAT32 uses only 28 bits
+////        value & 0x0FFFFFFFL;
+//
+//        return value & 0x0FFFFFFFL;
+//    }
 
-            for (int i = 0; i < fileData.length; i += 32) {
-                int firstByte = fileData[i] & 0xFF;
-                boolean isDeleted = false;
-                String name = "";
+//    public byte[] readCluster(long cluster) throws IOException {
+//        long firstDataSector = this.bootSectors.reservedSectorsCount + (this.bootSectors.fatsCount * this.bootSectors.fatSize);
+//        long firstSectorOfCluster = ((cluster - 2) * this.bootSectors.sectorsPerCluster) + firstDataSector;
+//
+//        long offset = offsetToBootSector + (firstSectorOfCluster * this.bootSectors.bytesPerSector);
+//
+//
+//
+//        System.out.println("firstDataSector = " + firstDataSector);
+//        System.out.println("firstSectorOfCluster = " + firstSectorOfCluster);
+//        System.out.println("offset = " + offset);
+//        System.out.println("file length = " + disk.length());
+//
+//        this.disk.seek(offset);
+//
+//        byte[] data = new byte[this.bootSectors.clusterSize];
+//        this.disk.readFully(data);
+//
+//        return data;
+//    }
 
-                // unused entry
-                if (firstByte == 0x00) break;
-
-                // is entry deleted
-                if (firstByte == 0xE5) isDeleted = true;
-
-                int attribute = fileData[i + 11] & 0xFF;
-
-                // is entry a Directory
-                boolean isDirectory = (attribute & 0x10) != 0;
-
-                // has entry a long Filename
-                if (attribute == 0x0F) {
-                    StringBuilder part = new StringBuilder();
-
-                    // chars 1-5
-                    readUTF16LEChars(fileData, i + 1, 10, part);
-
-                    // chars 6-11
-                    readUTF16LEChars(fileData, i + 14, 12, part);
-
-                    // chars 12-13
-                    readUTF16LEChars(fileData, i + 28, 4, part);
-
-                    longFileNameParts.add(0, part.toString());
-                    continue;
-                }
-                else {
-                    name = String.join("", longFileNameParts);
-
-                    if (name.isEmpty()) {
-                        // fallback to 8.3 short name
-                        name = new String(fileData, i, 8, StandardCharsets.US_ASCII).trim();
-                        String ext = new String(fileData, i + 8, 3, StandardCharsets.US_ASCII).trim();
-
-                        if (!ext.isEmpty()) name += "." + ext;
-                    }
-
-                    longFileNameParts.clear();
-                }
-
-                // replace first char with _ if the entry has been deleted
-                if (isDeleted) name = "_" + name.substring(1);
-
-                // calculate Cluster
-                long high = ((fileData[i + 21] & 0xFFFF) << 8) | (fileData[i + 20] & 0xFFFF);
-                long low = ((fileData[i + 27] & 0xFFFF) << 8) | (fileData[i + 26] & 0xFFFF);
-                long startCluster = (high << 16) | low;
-
-                // calculate size of File
-                long fileSize = ((fileData[i + 31] & 0xFFL) << 24) |
-                        ((fileData[i + 30] & 0xFFL) << 16) |
-                        ((fileData[i + 29] & 0xFFL) << 8) |
-                        (fileData[i + 28] & 0xFFL);
-
-                // skip current directory and parent directory
-                if (name.equals(".") || name.equals("..")) continue;
-
-                // add directory entry to list of all entries
-                directoryEntries.add(new DirectoryEntry(
-                        name, startCluster, fileSize, isDeleted, isDirectory, level
-                ));
-
-                // enter subdirectory
-                if (isDirectory) directoryEntries.addAll(readDirectory(startCluster, (level + 1)));
-            }
-        }
-
-        return directoryEntries;
-    }
-
-    private long getNextCluster(long cluster) throws IOException {
-        long fatOffset = this.offsetToBootSector + ((long) this.bootSector.reservedSectorsCount * this.bootSector.bytesPerSector);
-
-        long fatEntryOffset = fatOffset + (cluster * 4);
-
-        disk.seek(fatEntryOffset);
-
-        byte[] bytes = new byte[4];
-        disk.readFully(bytes);
-
-        long value = ((bytes[3] & 0xFFL) << 24) |
-                ((bytes[2] & 0xFFL) << 16) |
-                ((bytes[1] & 0xFFL) << 8)  |
-                (bytes[0] & 0xFFL);
-
-        // FAT32 uses only 28 bits
-        value &= 0x0FFFFFFFL;
-
-        return value;
-    }
-
-    private byte[] readCluster(long cluster) throws IOException {
-        long firstDataSector = this.bootSector.reservedSectorsCount + (this.bootSector.fatsCount * this.bootSector.fatSize);
-        long firstSectorOfCluster = ((cluster - 2) * this.bootSector.sectorsPerCluster) + firstDataSector;
-
-        long offset = this.offsetToBootSector + (firstSectorOfCluster * this.bootSector.bytesPerSector);
-
-        this.disk.seek(offset);
-
-        byte[] data = new byte[this.bootSector.clusterSize];
-        this.disk.readFully(data);
-
-        return data;
-    }
-
-    private List<byte[]> readClusterChain(long startCluster) throws IOException {
-        List<byte[]> clusters = new LinkedList<>();
-
-        long currentCluster = startCluster;
-
-        // until End of Chain
-        while (!(currentCluster >= 0x0FFFFFF8L)) {
-
-            clusters.add(readCluster(currentCluster));
-
-            long nextCluster = getNextCluster(currentCluster);
-
-            // Protection against Corrupted FAT
-            if (nextCluster == 0 || nextCluster == currentCluster) {
-                break;
-            }
-
-            currentCluster = nextCluster;
-        }
-        return clusters;
-    }
+//    public List<byte[]> readClusterChain(long startCluster) throws IOException {
+//        List<byte[]> clusters = new ArrayList<>();
+//
+//        long currentCluster = startCluster;
+//        System.out.println("cluster = " + currentCluster);
+//        // Until End of Chain
+//        while (!(currentCluster >= 0x0FFFFFF8L)) {
+//            if (currentCluster < 2) break;
+//
+//            clusters.add(readCluster(currentCluster));
+//
+//            long nextCluster = getNextCluster(currentCluster);
+//
+//            // Protection against corrupted FAT
+//            if (nextCluster == 0 || nextCluster == currentCluster) {
+//                break;
+//            }
+//
+//            currentCluster = nextCluster;
+//        }
+//        return clusters;
+//    }
 
     public List<DirectoryEntry> getAllDeletedFilesAndDirectories() {
-        List<DirectoryEntry> deleted = new LinkedList<>();
-
+        List<DirectoryEntry> deleted = new ArrayList<>();
         for (DirectoryEntry directoryEntry : this.directoryEntries) {
-            // when directory entry is deleted add to list of deleted
-            if (directoryEntry.isDeleted) {
-                deleted.add(directoryEntry);
-            }
+            // When directory entry is deleted add to list of deleted
+            if (directoryEntry.isDeleted) deleted.add(directoryEntry);
         }
-
         return deleted;
     }
 
     public Map<Integer, List<DirectoryEntry>> getAllFilesAndDirectoriesFromDirectory(String name) throws IOException {
-        // list of clusters for if the name of the directory exists multiple time
-        List<Long> clusters = new LinkedList<>();
+        // List of clusters for if the name of the directory exists multiple time
+        List<Long> clusters = new ArrayList<>();
 
         for (DirectoryEntry directoryEntry : this.directoryEntries) {
-            if (directoryEntry.isDirectory) {
-                if (directoryEntry.fileName.equals(name)) {
-                    // add cluster to list if the directory has the same name as is searched for
-                    clusters.add(directoryEntry.startCluster);
-                }
-            }
+            // Add cluster to list if the directory has the same name as is searched for
+            if (directoryEntry.isDirectory && directoryEntry.fileName.equals(name)) clusters.add(directoryEntry.startCluster);
         }
 
-        // map for if the name of the directory exists multiple time
+        // Map for if the name of the directory exists multiple time
         Map<Integer, List<DirectoryEntry>> searched = new HashMap<>();
 
-        // add for each cluster in the list of clusters a list of directory entries to the map with an index
+        // Add for each cluster in the list of clusters a list of directory entries to the map with an index
         for (int i = 0; i < clusters.size(); i++) {
-            searched.put(i, this.readDirectory(clusters.get(i)));
+//            searched.put(i, this.readDirectory(clusters.get(i), 0));
         }
 
         return searched;

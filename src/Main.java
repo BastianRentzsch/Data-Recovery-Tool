@@ -1,7 +1,8 @@
+import directory.DirectoryEntry;
+
+import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-import java.util.Scanner;
+import java.util.*;
 
 // testData.img
 //Bytes per Sector: 512
@@ -14,14 +15,14 @@ import java.util.Scanner;
 // testData2.img
 // ?
 
+// C:\Users\bastianr\Desktop\test\testData.img
+// C:\Users\bastianr\Desktop\test\empty.img
+
 public class Main {
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
 
-        loop:do {
-            // H:\Kursmaterial\Java\Data Recovery Tool\src\testdata\testData.img
-            // H:\Kursmaterial\Java\Data Recovery Tool\src\testdata\testData2.img
-
+        loop:while (true) {
             Fat32Reader fat32Reader = new Fat32Reader();
             try {
                 if (openDriveOrImage(scanner, fat32Reader)) break;
@@ -41,7 +42,7 @@ public class Main {
 
                     switch (choice) {
                         case "1" -> openDriveOrImage(scanner, fat32Reader);
-                        case "2" -> fat32Reader.bootSector.printInfo();
+                        case "2" -> showBootSectorInfos(fat32Reader);
                         case "3" -> showAllFilesAndDirectories(fat32Reader, scanner);
                         case "4" -> showAllDeletedFilesAndDirectories(fat32Reader, scanner);
                         case "5" -> showAllFilesAndDirectoriesFromDirectory(fat32Reader, scanner);
@@ -52,54 +53,113 @@ public class Main {
                         default -> System.out.println("Please enter one of the numbers shown.");
                     }
                 }
+            } catch (FileNotFoundException e) {
+                System.out.println("Datei konnte nicht geöffnet werden.");
+                System.out.println(e.getClass().getName() + ": " + e.getMessage());
             } catch (IOException e) {
-                System.out.println("File not found.");
+                e.printStackTrace();
+                System.out.println("I/O-Fehler beim Lesen.");
+                System.out.println(e.getClass().getName() + ": " + e.getMessage());
             }
 
-        } while (true);
+//            catch (IOException e) {
+//                System.out.println("File not found or could not be opened.");
+//                System.out.println(e.getMessage());
+//            }
+        }
 
         scanner.close();
+    }
+
+    private static boolean openDriveOrImage(Scanner scanner, Fat32Reader fat32Reader) throws IOException {
+        String drivePath;
+        do {
+//            // Unter Windows z.B.: "\\\\.\\D:"(als Admin ausführen!).
+//            // Unter Linux z.B.: "/dev/sdb1".
+//              String drivePath = "\\\\\\\\.\\\\"+ args[0] +":";
+            System.out.print("Please enter the Path to the Drive or Image you want to open or 'quit' to exit: ");
+            drivePath = scanner.nextLine().trim();
+
+            if (!drivePath.isEmpty()) {
+//                // Opening Drive
+//                if (drivePath.endsWith(":")) {
+//                    drivePath = "\\\\\\\\.\\\\" + drivePath;
+//                    break;
+//                }
+                // Opening Image file
+                if (drivePath.endsWith(".img")) {
+                    break;
+                }
+                // Exiting programm
+                else if (drivePath.equalsIgnoreCase("quit")) {
+                    return true;
+                }
+                System.out.println("Please enter a path to an image file that ends with '.img' or 'quit'.");
+//                System.out.println("Please enter either an Drive name with ':' at the end or a Path to an Image file that ends with '.img'");
+            }
+        } while (true);
+
+        System.out.println("Pfad: [" + drivePath + "]");
+        System.out.println("Existiert: " + new java.io.File(drivePath).exists());
+        System.out.println("Ist Datei: " + new java.io.File(drivePath).isFile());
+
+
+        fat32Reader.open(drivePath);
+        return false;
+    }
+
+    private static void showBootSectorInfos(Fat32Reader fat32Reader) throws IOException {
+        System.out.println("\u001b[34m=== Show Boot Sektor Infos ===\u001b[0m");
+
+        // Show for each Partition their boot sector, 1 - 4 times
+        for (BootSector bootSector : fat32Reader.bootSectors) {
+            bootSector.printInfo();
+        }
     }
 
     private static void showAllFilesAndDirectories(Fat32Reader fat32Reader, Scanner scanner) throws IOException {
         System.out.println("\u001b[34m=== all Files and Directories ===\u001b[0m");
 
-        // output of directories entries in increments of 25
-        loop:for (int i = 0; i < fat32Reader.directoryEntries.size(); i+= 25) {
-            for (int j = i; j < i + 25; j++) {
-                // loop ending if the list of directories entries is not modulo 25 == 0
-                if (j >= fat32Reader.directoryEntries.size()) break loop;
-                // output of directories entry's information
+        if (fat32Reader.directoryEntries.isEmpty()) {
+            System.out.println("No Files and Directories could be found.");
+            return;
+        }
+
+        // Output of directories entries in increments of 25
+        for (int i = 0; i < fat32Reader.directoryEntries.size(); i+= 25) {
+            for (int j = i; j < i + 25 && j < fat32Reader.directoryEntries.size(); j++) {
+                // Output of directories entry's information
                 System.out.println(fat32Reader.directoryEntries.get(j));
             }
 
-            // question if user wants to stop, only the input "Y" or "y" matter, else it continues
-            System.out.print("Do you want to stop [ Y ]: ");
-            String choice = scanner.nextLine().trim();
-            if (choice.equalsIgnoreCase("y")) break;
+            // Question if user wants to stop, only the input "Y" or "y" matter, else it continues
+            if (i + 25 < fat32Reader.directoryEntries.size()) {
+                System.out.print("Do you want to stop [ Y ]: ");
+                String choice = scanner.nextLine().trim();
+                if (choice.equalsIgnoreCase("y")) return;
+            }
         }
     }
 
     private static void showAllDeletedFilesAndDirectories(Fat32Reader fat32Reader, Scanner scanner) throws IOException {
         System.out.println("\u001b[34m=== all deleted Files and Directories ===\u001b[0m");
 
-        // get a list of all deleted directory entries
+        // Get a list of all deleted directory entries
         List<DirectoryEntry> deleted = fat32Reader.getAllDeletedFilesAndDirectories();
 
-        // output of directories entries in increments of 25
-        loop:for (int i = 0; i < deleted.size(); i+= 25) {
-            for (int j = i; j < i + 25; j++) {
-                // loop ending if the list of directories entries is not modulo 25 == 0
-                if (j >= deleted.size()) break loop;
-
-                // output of directories entry's information
+        // Output of directories entries in increments of 25
+        for (int i = 0; i < deleted.size(); i+= 25) {
+            for (int j = i; j < i + 25 && j < deleted.size(); j++) {
+                // Output of directories entry's information
                 System.out.println(deleted.get(j));
             }
 
-            // question if user wants to stop, only the input "Y" or "y" matter, else it continues
-            System.out.print("Do you want to stop [ Y ]: ");
-            String choice = scanner.nextLine().trim();
-            if (choice.equalsIgnoreCase("y")) break;
+            // Question if user wants to stop, only the input "Y" or "y" matter, else it continues
+            if (i + 25 < deleted.size()) {
+                System.out.print("Do you want to stop [ Y ]: ");
+                String choice = scanner.nextLine().trim();
+                if (choice.equalsIgnoreCase("y")) return;
+            }
         }
     }
 
@@ -109,11 +169,11 @@ public class Main {
         System.out.print("Please enter the name of the Directory you want to search: ");
         String directoryName = scanner.nextLine().trim();
 
-        // get a list of all deleted directory entries
+        // Get a list of all deleted directory entries
         Map<Integer, List<DirectoryEntry>> searched = fat32Reader.getAllFilesAndDirectoriesFromDirectory(directoryName);
 
         if (searched.isEmpty()) {
-            System.out.println("no Directories with the name found.");
+            System.out.println("no directories with the name found.");
             return;
         }
 
@@ -122,51 +182,23 @@ public class Main {
         loopSearch:for (int index : searched.keySet()) {
             System.out.println("\u001b[38;2;145;231;255m" + (index + 1) + ". Search result \u001b[0m" );
             List<DirectoryEntry> search = searched.get(index);
-            for (int j = 0; j < search.size(); j += 25) {
-                for (int k = j; k < j + 25; k++) {
-                    // loop ending if the list of directories entries is not modulo 25 == 0
-                    if (k >= search.size()) break;
+            for (int i = 0; i < search.size(); i += 25) {
+                for (int j = i; j < i + 25 && j < search.size(); j++) {
+//                    // Loop ending if the list of directories entries is not modulo 25 == 0
+//                    if (j >= search.size()) break;
 
-                    // output of directories entry's information
-                    System.out.println(search.get(k));
+                    // Output of directories entry's information
+                    System.out.println(search.get(j));
                 }
 
-                // question if user wants to stop, only the input "Y" or "y" matter, else it continues
-                System.out.print("Do you want to stop [ Y ]: ");
-                String choice = scanner.nextLine().trim();
-                if (choice.equalsIgnoreCase("y")) break loopSearch;
+                // Question if user wants to stop, only the input "Y" or "y" matter, else it continues
+                if (i + 25 < search.size()) {
+                    System.out.print("Do you want to stop [ Y ]: ");
+                    String choice = scanner.nextLine().trim();
+                    if (choice.equalsIgnoreCase("y")) break loopSearch;
+                }
             }
         }
     }
 
-    private static boolean openDriveOrImage(Scanner scanner, Fat32Reader fat32Reader) throws IOException {
-        String drivePath;
-        do {
-//            // Unter Windows z.B.: "\\\\.\\D:"(als Admin ausführen!)
-//            // Unter Linux z.B.: "/dev/sdb1"
-//              String drivePath = "\\\\\\\\.\\\\"+ args[0] +":";
-            System.out.print("Please enter the Path to the Drive or Image you want to open or 'quit' to exit: ");
-            drivePath = scanner.nextLine().trim();
-
-            if (!drivePath.isEmpty()) {
-                // Openig Drive
-                if (drivePath.endsWith(":")) {
-                    drivePath = "\\\\\\\\.\\\\" + drivePath;
-                    break;
-                }
-                // Opening Image file
-                else if (drivePath.endsWith(".img")) {
-                    break;
-                }
-                // Exiting programm
-                else if (drivePath.equalsIgnoreCase("quit")) {
-                    return true;
-                }
-                System.out.println("Please enter either an Drive name with ':' at the end or a Path to an Image file that ends with '.img'");
-            }
-        } while (true);
-
-        fat32Reader.open(drivePath);
-        return false;
-    }
 }
