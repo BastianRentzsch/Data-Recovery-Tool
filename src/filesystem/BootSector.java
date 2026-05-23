@@ -1,23 +1,28 @@
-package partitionTable;
+package filesystem;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 public class BootSector {
+
     public int bytesPerSector;
     public int sectorsPerCluster;
     public int reservedSectorsCount;
-    public int fatsCount;
-    public long fatSize;
+    public int fatsCount; // Stores the number of FAT tables
+    public long fatSize; // Stores the size of one FAT in sectors
     public long totalSectors;
     public long rootCluster;
 
-    public long dataSector;
-    public long clusterCount;
-    public int clusterSize;
+    public long dataSector; // Stores the total number of data sectors
+    public long clusterCount; // Stores the total number of clusters
+    public int clusterSize; // Stores the size of a cluster in bytes
+    public long firstDataSector; // Stores the first sector of the data region
 
     public BootSector(byte[] bootSector) {
+
+        // Creates a little-endian byte buffer for reading FAT32 values
         ByteBuffer byteBuffer = ByteBuffer.wrap(bootSector).order(ByteOrder.LITTLE_ENDIAN);
+
         // Offset starts with 0 byte for BPB (BIOS Parameter Block)
 
         // Offset 11 byte | Size 2 bytes
@@ -41,15 +46,22 @@ public class BootSector {
         this.clusterCount = dataSector / this.sectorsPerCluster;
         // Size of a single cluster
         this.clusterSize = this.bytesPerSector * this.sectorsPerCluster;
+        // First sector with data of the partition
+        this. firstDataSector = this.reservedSectorsCount + (this.fatsCount * this.fatSize);
+
     }
 
-    public void printInfo() {
-        System.out.println("\u001b[34m=== FAT32 Boot Sector ===\u001b[0m");
+    // Prints important FAT32 boot sector information
+    public void printInfo(int index) {
+
+        System.out.println("\u001b[34m===" + index + ". Boot Sector ===\u001b[0m");
         System.out.println("Bytes per Sector: " + this.bytesPerSector);
         System.out.println("Sectors per Cluster: " + this.sectorsPerCluster);
         System.out.println("Reserved Sectors: " + this.reservedSectorsCount);
         System.out.println("FAT Count: " + this.fatsCount);
         System.out.println("FAT Size: " + this.fatSize);
         System.out.println("Root Cluster: " + this.rootCluster);
+
     }
+
 }

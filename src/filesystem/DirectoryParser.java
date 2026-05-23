@@ -1,7 +1,5 @@
 package filesystem;
 
-import partitionTable.BootSector;
-import utilities.Fat32Util;
 import utilities.LittleEndianParser;
 
 import java.io.IOException;
@@ -9,184 +7,199 @@ import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 public class DirectoryParser {
-    public static List<DirectoryEntry> readDirectory(long cluster, BootSector bootSector, long startByte, RandomAccessFile disk)
-            throws IOException {
-        // Cluster can not be lower than the root directory cluster
-        if (cluster < bootSector.rootCluster) return new ArrayList<>();
+    // Reads all directory entries starting from a cluster
+    public static List<DirectoryEntry> readDirectory(long startCluster,
+                                                     int level,
+                                                     BootSector bootSector,
+                                                     long startByte,
+                                                     long endByte,
+                                                     RandomAccessFile disk,
+                                                     Set<Long> visited) throws IOException {
 
-        return new ArrayList<>(readDirectory(cluster, 0, bootSector, startByte, disk));
-    }
+        // Stores all found directory entries
+        List<DirectoryEntry> entries = new ArrayList<>();
 
-    public static List<filesystem.DirectoryEntry> readDirectory(long cluster, int level, BootSector bootSector,
-                                                                long startByte, RandomAccessFile disk)
-            throws IOException {
-        List<filesystem.DirectoryEntry> entries = new ArrayList<>();
-
-        if (cluster < 2 || cluster >= bootSector.clusterCount + 2) return entries;
-
-        // Get all clusters that belong together with that cluster
-        List<byte[]> clusters = readClusterChain(cluster, bootSector, startByte, disk);
-
-        for (byte[] fileData : clusters) {
-            List<String> longFileNameParts = new ArrayList<>();
-
-            for (int i = 0; i < fileData.length; i += 32) {
-                int firstByte = fileData[i] & 0xFF;
-
-                // Unused entry
-                if (firstByte == 0x00) break;
-
-                // For looking if it is a directory and if it has a long name
-                int attribute = fileData[i + 11] & 0xFF;
-
-                // Has entry a long Filename
-                if (attribute == 0x0F) {
-                    StringBuilder part = new StringBuilder();
-                    // Chars 1-5
-                    LittleEndianParser.readUTF16LEChars(fileData, i + 1, 10, part);
-                    // Chars 6-11
-                    LittleEndianParser.readUTF16LEChars(fileData, i + 14, 12, part);
-                    // Chars 12-13
-                    LittleEndianParser.readUTF16LEChars(fileData, i + 28, 4, part);
-
-                    longFileNameParts.add(0, part.toString());
-                    continue;
-                }
-
-
-                // Is entry deleted
-                boolean isDeleted = firstByte == 0xE5;
-
-                // Is entry a Directory
-                boolean isDirectory = (attribute & 0x10) != 0;
-
-                String name = String.join("", longFileNameParts);
-                if (name.isEmpty()) {
-                    // Fallback to 8.3 short name
-                    name = new String(fileData, i, 8, StandardCharsets.US_ASCII).trim();
-                    String ext = new String(fileData, i + 8, 3, StandardCharsets.US_ASCII).trim();
-
-                    // Add extensions to file names
-                    if (!ext.isEmpty()) name += "." + ext;
-                }
-
-                longFileNameParts.clear();
-
-                // Skip current directory and parent directory
-                if (name.equals(".") || name.equals("..")) continue;
-
-                // Replace first char with _ if the entry has been deleted
-                if (isDeleted && !name.isEmpty()) name = "_" + name.substring(1);
-
-                // Calculate Cluster
-                long high = LittleEndianParser.readUInt16LE(fileData, i + 20) & 0xFFFFL;
-                long low = LittleEndianParser.readUInt16LE(fileData, i + 26) & 0xFFFFL;
-                long startCluster = (high << 16) | low;
-
-                // Calculate size of File
-                long fileSize = LittleEndianParser.readUInt32LE(fileData, i + 28);
-
-                if (startCluster != 0 && (startCluster < 2 || startCluster >= bootSector.clusterCount + 2)) continue;
-
-                // Add directory entry to list of all entries
-                entries.add(new filesystem.DirectoryEntry(
-                        name, startCluster, fileSize, isDeleted, isDirectory, level
-                ));
-
-                // Enter subdirectory
-                if (isDirectory && startCluster >= 2 && startCluster < bootSector.clusterCount + 2) entries.addAll(
-                        readDirectory(startCluster, (level + 1), bootSector, startByte, disk)
-                );
-            }
+        // Prevents infinite loops by checking visited clusters
+        if (!visited.add(startCluster)) {
+            return entries;
         }
 
+        // Starts with the first cluster of the directory
+        long currentCluster = startCluster;
+
+        // Iterates through the cluster chain
+        while (currentCluster >= 2 && currentCluster < bootSector.clusterCount + 2) {
+
+            // Reads the current cluster data
+            byte[] clusterData = readCluster(currentCluster, bootSector, startByte, endByte, disk);
+
+            // Parses all directory entries inside the cluster
+            processClusterData(clusterData, bootSector, startByte, endByte, disk, entries, level, visited);
+
+            // Gets the next cluster from the FAT
+            long nextCluster = getNextCluster(currentCluster, bootSector, startByte, disk);
+
+            // Stops if the next cluster is invalid
+            if (nextCluster < 2 || nextCluster >= bootSector.clusterCount + 2) break;
+
+            // Continues with the next cluster
+            currentCluster = nextCluster;
+        }
+
+        // Returns all found entries
         return entries;
     }
 
-    private static boolean isValidCluster(long cluster, BootSector bootSector) {
-        return cluster >= 2 && cluster < bootSector.clusterCount + 2;
-    }
+    // Parses all directory entries inside a cluster
+    private static void processClusterData(byte[] fileData,
+                                           BootSector bootSector,
+                                           long startByte,
+                                           long endByte,
+                                           RandomAccessFile disk,
+                                           List<DirectoryEntry> entries,
+                                           int level,
+                                           Set<Long> visited) throws IOException {
 
-    private static boolean isEoc(long cluster) {
-        return cluster >= 0x0FFFFFF8L && cluster <= 0x0FFFFFFFL;
-    }
+        // Stores parts of long file names
+        List<String> longFileNameParts = new ArrayList<>();
 
-    private static boolean isBadCluster(long cluster) {
-        return cluster == 0x0FFFFFF7L;
-    }
+        for (int i = 0; i < fileData.length; i += 32) {
 
-    public static List<byte[]> readClusterChain(long startCluster, BootSector bootSector,  long startByte,
-                                                RandomAccessFile disk) throws IOException {
-        List<byte[]> clusters = new ArrayList<>();
+            // Reads the first byte of the entry
+            int firstByte = fileData[i] & 0xFF;
 
-        long currentCluster = startCluster;
+            // Unused entry -> stop parsing this cluster
+            if (firstByte == 0x00) break;
 
-        System.out.println("cluster = " + currentCluster);
+            // Reads the attribute byte
+            int attribute = fileData[i + 11] & 0xFF;
 
+            // Checks if the entry is a long filename entry
+            if (attribute == 0x0F) {
+                // Stores part of the long filename
+                StringBuilder part = new StringBuilder();
 
-        // Until End of Chain
-        while (true) {
-//            if (currentCluster < 2 || currentCluster >= bootSector.clusterCount + 2) break;
-//            if (currentCluster >= 0x0FFFFFF8L) break;
-            if (!isValidCluster(currentCluster, bootSector)) break;
-            if (isEoc(currentCluster)) break;
-            if (isBadCluster(currentCluster)) break;
+                // Reads UTF-16 filename characters
+                LittleEndianParser.readUTF16LEChars(fileData, i + 1, 10, part);   // chars 1-5
+                LittleEndianParser.readUTF16LEChars(fileData, i + 14, 12, part);  // chars 6-11
+                LittleEndianParser.readUTF16LEChars(fileData, i + 28, 4, part);   // chars 12-13
 
-            clusters.add(readCluster(currentCluster, bootSector, startByte, disk));
+                // Inserts filename parts in reverse order
+                longFileNameParts.add(0, part.toString());
 
-            long nextCluster = getNextCluster(currentCluster, bootSector, startByte, disk);
+                // Continues with the next entry
+                continue;
+            }
 
-            // Protection against corrupted FAT
-            if (nextCluster == 0 || nextCluster == currentCluster) break;
-            if (nextCluster < 2 || nextCluster >= bootSector.clusterCount + 2) break;
+            // Checks if the entry is deleted
+            boolean isDeleted = firstByte == 0xE5;
 
-            currentCluster = nextCluster;
+            // Checks if the entry is a directory
+            boolean isDirectory = (attribute & 0x10) != 0;
+
+            // Combines all long filename parts
+            String name = String.join("", longFileNameParts);
+
+            // Uses the short 8.3 name if no long name exists
+            if (name.isEmpty()) {
+
+                // Reads the short filename
+                name = new String(fileData, i, 8, StandardCharsets.US_ASCII).trim();
+
+                // Reads the extension
+                String ext = new String(fileData, i + 8, 3, StandardCharsets.US_ASCII).trim();
+
+                // Appends the extension if present
+                if (!ext.isEmpty()) name += "." + ext;
+            }
+
+            // Clears the long filename buffer
+            longFileNameParts.clear();
+
+            // Skip current directory and parent directory
+            if (name.equals(".") || name.equals("..")) continue;
+
+            // Restores the first character marker for deleted entries
+            if (isDeleted && !name.isEmpty()) name = "_" + name.substring(1);
+
+            // Reads the high 16 bits of the cluster number
+            long high = LittleEndianParser.readUInt16LE(fileData, i + 20) & 0xFFFFL;
+
+            // Reads the low 16 bits of the cluster number
+            long low  = LittleEndianParser.readUInt16LE(fileData, i + 26) & 0xFFFFL;
+
+            // Combines high and low cluster values
+            long startCluster = (high << 16) | low;
+
+            // Reads the file size
+            long fileSize = LittleEndianParser.readUInt32LE(fileData, i + 28);
+
+            // Adds the entry to the result list
+            entries.add(new filesystem.DirectoryEntry(
+                    name, startCluster, fileSize, isDeleted, isDirectory, level
+            ));
+
+            // Recursively reads subdirectories
+            if (isDirectory && !isDeleted && startCluster >= 2 && startCluster < bootSector.clusterCount + 2) {
+                entries.addAll(readDirectory(startCluster, level + 1, bootSector, startByte, endByte, disk, visited));
+            }
         }
-        return clusters;
     }
 
-    public static byte[] readCluster(long cluster, BootSector bootSector,  long startByte, RandomAccessFile disk)
-            throws IOException {
-        long firstDataSector = bootSector.reservedSectorsCount + (bootSector.fatsCount * bootSector.fatSize);
-        long firstSectorOfCluster = ((cluster - 2) * bootSector.sectorsPerCluster) + firstDataSector;
+    // Reads a complete cluster from the disk image
+    public static byte[] readCluster(long cluster,
+                                     BootSector bootSector,
+                                     long startByte,
+                                     long endByte,
+                                     RandomAccessFile disk) throws IOException {
 
+        // Calculates the first sector of the cluster
+        long firstSectorOfCluster = ((cluster - 2) * bootSector.sectorsPerCluster) + bootSector.firstDataSector;
+
+        // Calculates the byte offset of the cluster
         long offset = startByte + (firstSectorOfCluster * bootSector.bytesPerSector);
 
-        System.out.println("firstDataSector = " + firstDataSector);
-        System.out.println("firstSectorOfCluster = " + firstSectorOfCluster);
-        System.out.println("offset = " + offset);
-        System.out.println("file length = " + disk.length());
+        // Stops if the cluster is outside the partition
+        if (offset > endByte) return new byte[0];
 
         disk.seek(offset);
-
         byte[] data = new byte[bootSector.clusterSize];
         disk.readFully(data);
 
         return data;
     }
 
-    public static long getNextCluster(long cluster, BootSector bootSector,  long startByte, RandomAccessFile disk)
-            throws IOException {
+    // Reads the next cluster number from the FAT
+    public static long getNextCluster(long cluster,
+                                      BootSector bootSector,
+                                      long startByte,
+                                      RandomAccessFile disk) throws IOException {
+
+        // Calculates the FAT start offset
         long fatStartByte = startByte + ((long) bootSector.reservedSectorsCount * bootSector.bytesPerSector);
 
+        // Calculates the FAT entry offset
         long offset = fatStartByte + (cluster * 4L);
 
+        // Stops if the FAT entry is outside the disk image
         if (offset + 4 > disk.length()) return 0;
 
         disk.seek(offset);
+
+        // Reads the FAT entry bytes
         byte[] bytes = new byte[4];
         disk.readFully(bytes);
 
+        // Converts the FAT entry to a 32-bit value
         long value = ((bytes[3] & 0xFFL) << 24) |
                 ((bytes[2] & 0xFFL) << 16) |
                 ((bytes[1] & 0xFFL) << 8)  |
                 (bytes[0] & 0xFFL);
 
-        // FAT32 uses only 28 bits
-
-
+        // FAT32 only uses the lower 28 bits
         return value & 0x0FFFFFFFL;
     }
 }
