@@ -1,6 +1,7 @@
 import filesystem.DirectoryEntry;
 import filesystem.Partition;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.*;
@@ -18,6 +19,8 @@ import java.util.*;
 
 // C:\Users\bastianr\Desktop\test\testData.img
 // C:\Users\bastianr\Desktop\test\empty.img
+// C:\Users\bastianr\Desktop\test\2del.img
+// C:\Users\bastianr\Desktop\test\bearbeiten.img
 
 public class Main {
 
@@ -45,7 +48,7 @@ public class Main {
                     System.out.println("3. Show all Files and Directories");
                     System.out.println("4. Show all deleted Files and Directories");
                     System.out.println("5. Show all Files and Directories from a specific Directory");
-
+                    System.out.println("6. Restore deleted File or Directory");
                     System.out.println("7. Quit");
 
                     // Reads user choice
@@ -60,7 +63,7 @@ public class Main {
                         case "3" -> showAllFilesAndDirectories(fat32Reader, scanner);
                         case "4" -> showAllDeletedFilesAndDirectories(fat32Reader, scanner);
                         case "5" -> showAllFilesAndDirectoriesFromDirectory(fat32Reader, scanner);
-
+                        case "6" -> restoreDeletedFileOrDirectory(fat32Reader, scanner);
                         // Exits the program loop
                         case "7" -> {
                             break loop;
@@ -194,6 +197,14 @@ public class Main {
         // Gets all deleted entries
         List<DirectoryEntry> deleted = fat32Reader.getAllDeletedFilesAndDirectories();
 
+
+        if (deleted.isEmpty()) {
+
+            System.out.println("No deleted Files and Directories could be found.");
+            return;
+
+        }
+
         // Prints entries in chunks of 25
         for (int i = 0; i < deleted.size(); i+= 25) {
 
@@ -279,4 +290,22 @@ public class Main {
 
     }
 
+
+    private static void restoreDeletedFileOrDirectory(Fat32Reader fat32Reader,
+                                                      Scanner scanner) throws IOException {
+
+        String restoreName;
+
+        while (true) {
+            System.out.print("Please enter the name of the File or Directory you want to restore: ");
+            restoreName = scanner.nextLine().trim();
+            if (!restoreName.isEmpty()) {
+                break;
+            }
+            System.out.println("Please enter a name");
+        }
+
+        fat32Reader.recoverAllDeletedFileOrDirectory(restoreName);
+
+    }
 }

@@ -202,4 +202,50 @@ public class DirectoryParser {
         // FAT32 only uses the lower 28 bits
         return value & 0x0FFFFFFFL;
     }
+
+
+    public static byte[] recoverFile(DirectoryEntry directoryEntry,
+                                     BootSector bootSector,
+                                     long startByte,
+                                     long endByte,
+                                     RandomAccessFile disk) throws IOException {
+
+//        if (!directoryEntry.isDirectory || directoryEntry.startCluster < 2) return new byte[0];
+
+        List<byte[]> chunks = new ArrayList<>();
+        long currentCluster = directoryEntry.startCluster;
+
+        while (currentCluster >= 2 && currentCluster < bootSector.clusterCount + 2) {
+            byte[] clusterData = readCluster(currentCluster, bootSector, startByte, endByte, disk);
+
+            if (clusterData.length == 0) break;
+
+            chunks.add(clusterData);
+
+            long nextCluster = getNextCluster(currentCluster, bootSector, startByte, disk);
+
+            if (nextCluster < 2 || nextCluster >= bootSector.clusterCount + 2) break;
+            currentCluster = nextCluster;
+        }
+
+        long totalSize = 0;
+        for (byte[] chunk : chunks) {
+            totalSize += chunk.length;
+        }
+
+        long fileSize = Math.min(directoryEntry.fileSize, totalSize);
+        byte[] result = new byte[(int) fileSize];
+
+        int offset = 0;
+        for (byte[] chunk : chunks) {
+            int copyLength = (int) Math.min(chunk.length, fileSize - offset);
+            if (copyLength <= 0) break;
+            System.arraycopy(chunk, 0, result, offset, copyLength);
+            offset += copyLength;
+        }
+
+        return result;
+    }
+
+
 }
