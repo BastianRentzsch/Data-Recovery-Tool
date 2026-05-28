@@ -4,7 +4,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 public class BootSector {
-
     public int bytesPerSector;
     public int sectorsPerCluster;
     public int reservedSectorsCount;
@@ -19,7 +18,6 @@ public class BootSector {
     public long firstDataSector; // Stores the first sector of the data region
 
     public BootSector(byte[] bootSector) {
-
         // Creates a little-endian byte buffer for reading FAT32 values
         ByteBuffer byteBuffer = ByteBuffer.wrap(bootSector).order(ByteOrder.LITTLE_ENDIAN);
 
@@ -48,12 +46,10 @@ public class BootSector {
         this.clusterSize = this.bytesPerSector * this.sectorsPerCluster;
         // First sector with data of the partition
         this. firstDataSector = this.reservedSectorsCount + (this.fatsCount * this.fatSize);
-
     }
 
     // Prints important FAT32 boot sector information
     public void printInfo(int index) {
-
         System.out.println("\u001b[34m===" + index + ". Boot Sector ===\u001b[0m");
         System.out.println("Bytes per Sector: " + this.bytesPerSector);
         System.out.println("Sectors per Cluster: " + this.sectorsPerCluster);
@@ -61,7 +57,5 @@ public class BootSector {
         System.out.println("FAT Count: " + this.fatsCount);
         System.out.println("FAT Size: " + this.fatSize);
         System.out.println("Root Cluster: " + this.rootCluster);
-
     }
-
 }

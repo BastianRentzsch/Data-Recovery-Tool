@@ -1,7 +1,6 @@
 package filesystem;
 
 public class DirectoryEntry {
-
     public String fileName;
     public long startCluster;
     public long fileSize; // Stores the file size in bytes
@@ -15,19 +14,16 @@ public class DirectoryEntry {
                           boolean isDeleted,
                           boolean isDirectory,
                           int level) {
-
         this.fileName = fileName;
         this.startCluster = startCluster;
         this.fileSize = fileSize;
         this.isDeleted = isDeleted;
         this.isDirectory = isDirectory;
         this.level = level;
-
     }
 
     @Override
     public String toString() {
-
         // Creates a formatted string representation of the entry
         return "  ".repeat(Math.max(0, this.level)) +
                 (isDeleted ? "\u001b[31;43m[DELETED]\u001b[0m " : "") + // Adds a deleted marker if the entry is deleted
@@ -36,7 +32,5 @@ public class DirectoryEntry {
                 this.startCluster +
                 " | Size: " +
                 this.fileSize;
-
-
     }
 }

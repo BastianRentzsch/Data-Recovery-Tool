@@ -4,12 +4,9 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 
 public class MasterBootRecord {
-
     public PartitionEntry[] partitionEntries;
 
     public MasterBootRecord(RandomAccessFile disk) throws IOException {
-
-
         // Allocates space for the maximum of four MBR partitions
         this.partitionEntries = new PartitionEntry[4];
 
@@ -17,7 +14,6 @@ public class MasterBootRecord {
         long pos = 446;
 
         for (int i = 0; i < 4; i++) {
-
             disk.seek(pos);
 
             // One entry is 16 byte big
@@ -26,9 +22,6 @@ public class MasterBootRecord {
             partitionEntries[i] = new PartitionEntry(bytes);
 
             pos += 16;
-
         }
-
     }
-
 }
