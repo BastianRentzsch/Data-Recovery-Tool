@@ -11,8 +11,42 @@ import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 
+/**
+ * DiskViewer provides the console-based user interface for the FAT32 Data Recovery Tool.
+ *
+ * <p>This class handles all user interactions including:<br>
+ * - Opening disk images with path validation<br>
+ * - Displaying boot sector information for all partitions<br>
+ * - Showing all files and directories (paginated at 25 entries)<br>
+ * - Showing all deleted files and directories with [DELETED] markers<br>
+ * - Searching for directories by name and displaying their contents<br>
+ * - Restoring deleted files and directories to the file system</p>
+ *
+ * <p>All methods use ANSI escape codes for colored output:<br>
+ * - Red for main headers<br>
+ * - Blue for section headers<br>
+ * - Red/yellow for [DELETED] markers<br>
+ * - Light blue for search result indices</p>
+ *
+ * @author Bastian Rentzsch
+ * @version 1.0
+ */
 public class DiskViewer {
-    // Opens a disk image or drive file
+    /**
+     * Opens a drive or disk image file.
+     *
+     * <p>Prompts the user to enter a path to a .img file. Validates that:<br>
+     * - Input is not empty<br>
+     * - Path ends with ".img" extension<br>
+     * - User did not type "quit" to exit</p>
+     *
+     * <p>Calls fat32Reader.open() to parse the disk image and detect partitions.</p>
+     *
+     * @param scanner the Scanner for reading user input
+     * @param fat32Reader the Fat32Reader instance to open the image with
+     * @return true if user entered "quit" to exit, false if image opened successfully
+     * @throws IOException if the image file cannot be opened or parsed
+     */
     public static boolean openDriveOrImage(Scanner scanner,
                                            Fat32Reader fat32Reader) throws IOException {
         String imagePath;
@@ -39,7 +73,16 @@ public class DiskViewer {
         return false;
     }
 
-    // Displays boot sector information for all partitions
+    /**
+     * Displays boot sector information for all detected partitions.
+     *
+     * <p>Calls BootSector.printInfo() for each partition with an index number
+     * showing bytes per sector, sectors per cluster, reserved sectors,
+     * FAT count, FAT size, and root cluster.</p>
+     *
+     * @param fat32Reader the Fat32Reader containing the parsed partitions
+     * @throws IOException if reading boot sector data fails
+     */
     public static void showBootSectorInfos(Fat32Reader fat32Reader) throws IOException {
         System.out.println("\u001b[34m=== Show Boot Sector Infos ===\u001b[0m");
 
@@ -52,7 +95,17 @@ public class DiskViewer {
         }
     }
 
-    // Displays all files and directories
+    /**
+     * Displays all files and directories from all partitions.
+     *
+     * <p>Outputs directory entries in chunks of 25 with pagination.
+     * If more than 25 entries exist, prompts user with "Do you want to stop [ Y ]:"
+     * to continue or stop viewing.</p>
+     *
+     * @param fat32Reader the Fat32Reader containing the parsed partitions
+     * @param scanner the Scanner for reading user pagination choice
+     * @throws IOException if reading directory entries fails
+     */
     public static void showAllFilesAndDirectories(Fat32Reader fat32Reader,
                                                    Scanner scanner) throws IOException {
         System.out.println("\u001b[34m=== all Files and Directories ===\u001b[0m");
@@ -83,7 +136,17 @@ public class DiskViewer {
         }
     }
 
-    // Displays all deleted files and directories
+    /**
+     * Displays all deleted files and directories from all partitions.
+     *
+     * <p>Calls fat32Reader.getAllDeletedFilesAndDirectories() to collect
+     * all entries with isDeleted = true. Outputs with [DELETED] markers
+     * in red/yellow color with pagination at 25 entries.</p>
+     *
+     * @param fat32Reader the Fat32Reader containing the parsed partitions
+     * @param scanner the Scanner for reading user pagination choice
+     * @throws IOException if reading deleted entries fails
+     */
     public static void showAllDeletedFilesAndDirectories(Fat32Reader fat32Reader,
                                                           Scanner scanner) throws IOException {
         System.out.println("\u001b[34m=== all deleted Files and Directories ===\u001b[0m");
@@ -114,7 +177,17 @@ public class DiskViewer {
         }
     }
 
-    // Searches for directories by name and lists their contents
+    /**
+     * Searches for directories by name and displays their contents.
+     *
+     * <p>Prompts user for a directory name, calls fat32Reader.getAllFilesAndDirectoriesFromDirectory()
+     * to find all matching directories, then displays contents of each match
+     * indexed by occurrence number with pagination at 25 entries.</p>
+     *
+     * @param fat32Reader the Fat32Reader to search partitions
+     * @param scanner the Scanner for reading directory name and pagination
+     * @throws IOException if searching or reading directory contents fails
+     */
     public static void showAllFilesAndDirectoriesFromDirectory(Fat32Reader fat32Reader,
                                                                 Scanner scanner) throws IOException {
         System.out.println("\u001b[34m=== Search for Directories by name ===\u001b[0m");
@@ -162,7 +235,20 @@ public class DiskViewer {
         }
     }
 
-    // Gets a name from the user and restores the corresponding deleted file or directory
+    /**
+     * Restores a deleted file or directory by name.
+     *
+     * <p>Prompts user for the name of the file/directory to restore.
+     * Constructs a save path under C:/Users/[username]/DataPhoenix/[image-name]/
+     * and calls fat32Reader.recoverAllDeletedFileOrDirectory() to perform recovery.</p>
+     *
+     * <p>Shows success messages with file/directory name and save location.<br>
+     * Warns if file already exists and asks user to delete it first.</p>
+     *
+     * @param fat32Reader the Fat32Reader to search and recover from
+     * @param scanner the Scanner for reading the name to restore
+     * @throws IOException if recovery or file writing fails
+     */
     public static void restoreDeletedFileOrDirectory(Fat32Reader fat32Reader,
                                                       Scanner scanner) throws IOException {
         String restoreName; // Stores the name of the file or directory to restore

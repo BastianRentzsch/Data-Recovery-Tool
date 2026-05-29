@@ -1,3 +1,5 @@
+package main;
+
 import fat32.Fat32Reader;
 import menu.DiskViewer;
 
@@ -5,11 +7,43 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.*;
 
+/**
+ * Main class serving as the entry point for the FAT32 Data Recovery Tool.
+ *
+ * <p>Implements the main program loop with a menu-driven interface offering
+ * seven options:<br>
+ * 1. Change Image - Open a different disk image<br>
+ * 2. Show Boot Sector Information - Display FAT32 parameters<br>
+ * 3. Show all Files and Directories - List all entries<br>
+ * 4. Show all deleted Files and Directories - List deleted entries<br>
+ * 5. Show Files/Directories from specific Directory - Search by name<br>
+ * 6. Restore deleted File or Directory - Recover by name<br>
+ * 7. Quit - Exit the program</p>
+ *
+ * <p>Handles exceptions gracefully:<br>
+ * - FileNotFoundException: Shows user-friendly message for missing images<br>
+ * - IOException: Prints stack trace and error details for debugging</p>
+ *
+ * @author Bastian Rentzsch
+ * @version 1.0
+ */
 public class Main {
+    /**
+     * Main entry point of the FAT32 Data Recovery Tool.
+     *
+     * <p>Creates a Scanner for console input and enters the main program loop:<br>
+     * 1. Creates a new Fat32Reader instance<br>
+     * 2. Opens a disk image via DiskViewer.openDriveOrImage()<br>
+     * 3. Enters the menu loop until user selects "Quit" (option 7)<br>
+     * 4. Handles exceptions and displays error messages<br>
+     * 5. Closes the Scanner before exiting</p>
+     *
+     * @param args command line arguments (not used)
+     */
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
 
-        // Main program loop
+        // main program loop
         loop:while (true) {
             Fat32Reader fat32Reader = new Fat32Reader();
 

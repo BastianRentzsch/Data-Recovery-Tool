@@ -6,8 +6,44 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * DirectoryParser provides static utility methods for parsing directory structures
+ * and recovering deleted files in FAT32 filesystems.
+ *
+ * <p>This class contains the core algorithms for:<br>
+ * - Recursively reading directory entries from a cluster chain<br>
+ * - Detecting and preventing infinite loops with visited cluster tracking<br>
+ * - Reconstructing deleted file data by reading cluster sequences<br>
+ * - Handling both short 8.3 filenames and long UTF-16 filenames</p>
+ *
+ * <p>All methods are static as this is a utility class with no instance state.</p>
+ *
+ * @author Bastian Rentzsch
+ * @version 1.0
+ */
 public class DirectoryParser {
-    // Reads all directory entries starting from a cluster
+    /**
+     * Reads all directory entries starting from a given cluster.
+     *
+     * <p>Traverses the cluster chain by repeatedly calling ClusterReader.getNextCluster()
+     * until reaching an end-of-chain marker (≥ 0x0FFFFFF8). For each cluster:<br>
+     * 1. Reads the cluster data with ClusterReader.readCluster()<br>
+     * 2. Parses directory entries with ClusterReader.processClusterData()<br>
+     * 3. Recursively processes subdirectories found in the entries</p>
+     *
+     * <p>Uses a Set&lt;Long&gt; visited to prevent infinite loops from corrupted
+     * cluster chains that contain cycles.</p>
+     *
+     * @param startCluster the starting cluster number of the directory
+     * @param level the directory depth level for formatted output
+     * @param bootSector the FAT32 boot sector with filesystem parameters
+     * @param startByte the starting byte offset of the partition
+     * @param endByte the ending byte offset of the partition
+     * @param disk the RandomAccessFile handle for the disk image
+     * @param visited a set tracking already-visited cluster numbers to prevent loops
+     * @return a list of all DirectoryEntry objects found in the directory chain
+     * @throws IOException if reading cluster data fails
+     */
     public static List<DirectoryEntry> readDirectory(long startCluster,
                                                      int level,
                                                      BootSector bootSector,
@@ -42,11 +78,30 @@ public class DirectoryParser {
             currentCluster = nextCluster;
         }
 
-        // Returns all found entries
         return entries;
     }
 
-    // Recovers a deleted file by reading its clusters sequentially and reconstructing its data into a byte array
+    /**
+     * Recovers a deleted file by reading its clusters sequentially.
+     *
+     * <p>Reconstructs file data by:<br>
+     * 1. Calculating expectedClusters = ceil(fileSize / clusterSize)<br>
+     * 2. Reading each cluster sequentially (assumes contiguous allocation)<br>
+     * 3. Stopping at empty clusters after the first non-empty cluster<br>
+     * 4. Combining all cluster data into a single byte array<br>
+     * 5. Truncating to the actual fileSize to avoid overflow</p>
+     *
+     * <p>This method assumes contiguous cluster allocation which works for
+     * most deleted files but may not recover fragmented files completely.</p>
+     *
+     * @param directoryEntry the DirectoryEntry containing the deleted file's metadata
+     * @param bootSector the FAT32 boot sector with filesystem parameters
+     * @param startByte the starting byte offset of the partition
+     * @param endByte the ending byte offset of the partition
+     * @param disk the RandomAccessFile handle for the disk image
+     * @return byte array containing the recovered file data, or empty array if recovery fails
+     * @throws IOException if reading cluster data fails
+     */
     public static byte[] recoverFile(DirectoryEntry directoryEntry,
                                      BootSector bootSector,
                                      long startByte,

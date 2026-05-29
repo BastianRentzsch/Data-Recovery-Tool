@@ -12,13 +12,42 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 
+/**
+ * <p>Fat32Reader is the main class for the FAT32 Data Recovery Tool.
+ * It provides functionality to open disk images, parse FAT32 partitions,
+ * detect deleted files and directories, and recover them to the file system.</p>
+ *
+ * <p>This class coordinates the entire recovery process by managing partitions,
+ * tracking recovered files to avoid duplicates, and delegating parsing tasks
+ * to helper classes like MasterBootRecord, Partition, and DirectoryParser.</p>
+ *
+ * @author Bastian Rentzsch
+ * @version 1.0
+ */
 public class Fat32Reader {
-    public RandomAccessFile disk; // File handle for the opened disk image
-    public List<Partition> partitions; // List of detected partitions on the disk
-    public String[] imagePath; // Stores the split path of the disk image
-    private Set<String> recoveredFiles; // Tracks already recovered files to avoid duplicates
+    /** File handle for the opened disk image (read-only mode) */
+    public RandomAccessFile disk;
 
-    // Opens a disk image and parses its partitions
+    /** List of detected partitions on the disk */
+    public List<Partition> partitions;
+
+    /** Stores the split path components of the disk image */
+    public String[] imagePath;
+
+    /** Tracks already recovered files to avoid duplicates during recovery */
+    private Set<String> recoveredFiles;
+
+    /**
+     * Opens a disk image and parses its partitions.
+     *
+     * This method validates the input path, opens the disk image in read-only mode,
+     * reads the Master Boot Record from offset 0, parses the partition entries,
+     * and creates Partition objects for each valid partition found.
+     *
+     * @param imagePath the path to the disk image file (must end with .img)
+     * @throws IOException if the path is invalid, the file cannot be opened,
+     *         or reading the MBR fails
+     */
     public void open(String imagePath) throws IOException {
         // Validates the input path
         if (imagePath == null || imagePath.isEmpty()) throw new IOException("Invalid Path");
@@ -55,7 +84,14 @@ public class Fat32Reader {
         this.recoveredFiles = new HashSet<>();
     }
 
-    // Collects all deleted files and directories from all partitions
+    /**
+     * Collects all deleted files and directories from all partitions.
+     *
+     * Iterates through all partitions and their directory entries,
+     * collecting all entries marked as deleted (isDeleted == true).
+     *
+     * @return a list of all deleted DirectoryEntry objects from all partitions
+     */
     public List<DirectoryEntry> getAllDeletedFilesAndDirectories() {
         List<DirectoryEntry> deletedEntries = new ArrayList<>();
 
@@ -70,7 +106,20 @@ public class Fat32Reader {
         return deletedEntries;
     }
 
-    // Searches for directories by name and returns their contents
+    /**
+     * Searches for directories by name and returns their contents.
+     *
+     * Iterates through all partitions looking for directory entries
+     * that match the specified name and are marked as directories.
+     * For each match, reads the directory contents and stores them
+     * in a map indexed by occurrence order.
+     *
+     * @param name the directory name to search for
+     * @return a map where keys are occurrence indices (0, 1, 2...)
+     *         and values are lists of DirectoryEntry objects containing
+     *         the files and subdirectories of each matching directory
+     * @throws IOException if reading directory clusters fails
+     */
     public Map<Integer, List<DirectoryEntry>> getAllFilesAndDirectoriesFromDirectory(String name) throws IOException {
         // Stores clusters of matching directory names
         List<Long> clusters = new ArrayList<>();
@@ -99,7 +148,18 @@ public class Fat32Reader {
         return searched;
     }
 
-    // Recursively recovers deleted files or directories by name
+    /**
+     * Recursively recovers deleted files or directories by name.
+     *
+     * This method searches for a deleted file or directory with the
+     * specified name across all partitions and recovers it to the
+     * given save path. For directories, it recursively recovers
+     * all contained files and subdirectories.
+     *
+     * @param name the name of the file or directory to recover
+     * @param path the base directory path where recovered items will be saved
+     * @throws IOException if file recovery or writing fails
+     */
     public void recoverAllDeletedFileOrDirectory(String name, Path path) throws IOException {
         if (recoveredFiles.contains(name)) return; // Skip if already recovered
         recoveredFiles.add(name); // Mark as recovered
